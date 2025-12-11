@@ -30,7 +30,19 @@ async function fetchRouterData() {
       try {
         const jsonStart = rawData.indexOf('{');
         if (jsonStart === -1) throw new Error('No JSON found');
-        const data = JSON.parse(rawData.substring(jsonStart));
+
+        let braceCount = 0;
+        let jsonEnd = jsonStart;
+        for (let i = jsonStart; i < rawData.length; i++) {
+          if (rawData[i] === '{') braceCount++;
+          else if (rawData[i] === '}') braceCount--;
+          if (braceCount === 0) {
+            jsonEnd = i + 1;
+            break;
+          }
+        }
+
+        const data = JSON.parse(rawData.substring(jsonStart, jsonEnd));
         resolve(data);
       } catch (error) {
         console.error('Failed to parse router data:', error.message);
