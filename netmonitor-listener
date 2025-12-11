@@ -18,18 +18,30 @@ get_timestamp() {
 
 add_event() {
     local ts=$(get_timestamp)
-    printf '{"time":"%s","type":"%s","message":"%s"}\n' \
+    local tmp1="$QUEUE_FILE.tmp.$$"
+    local tmp2="$QUEUE_FILE.tmp2.$$"
+
+    printf '{"time":"%s","type":"%s","message":"%s"}' \
         "$(json_escape "$ts")" \
         "$(json_escape "$1")" \
-        "$(json_escape "$2")" >> "$QUEUE_FILE.tmp"
-    
-    cat "$QUEUE_FILE" 2>/dev/null | grep -v '^\[$' | grep -v '^\]$' | head -199 > "$QUEUE_FILE.tmp2"
-    echo '[' > "$QUEUE_FILE"
-    [ -s "$QUEUE_FILE.tmp2" ] && cat "$QUEUE_FILE.tmp2" >> "$QUEUE_FILE" && echo ',' >> "$QUEUE_FILE"
-    cat "$QUEUE_FILE.tmp" >> "$QUEUE_FILE"
-    echo ']' >> "$QUEUE_FILE"
-    rm -f "$QUEUE_FILE.tmp" "$QUEUE_FILE.tmp2"
-    chmod 644 "$QUEUE_FILE"
+        "$(json_escape "$2")" > "$tmp1"
+
+    (
+        flock -x 200
+        cat "$QUEUE_FILE" 2>/dev/null | grep -v '^\[' | grep -v '^\]' | grep -v '^,$' | grep -v '^$' | head -199 > "$tmp2"
+        echo '[' > "$QUEUE_FILE"
+        if [ -s "$tmp2" ]; then
+            cat "$tmp2" | while IFS= read -r line; do
+                echo "$line,"
+            done >> "$QUEUE_FILE"
+        fi
+        cat "$tmp1" >> "$QUEUE_FILE"
+        echo '' >> "$QUEUE_FILE"
+        echo ']' >> "$QUEUE_FILE"
+        chmod 644 "$QUEUE_FILE"
+    ) 200>"$QUEUE_FILE.lock"
+
+    rm -f "$tmp1" "$tmp2"
 }
 
 monitor_pppoe() {
