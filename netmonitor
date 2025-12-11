@@ -1,0 +1,118 @@
+#!/bin/sh /etc/rc.common
+# OpenWrt ARM 网络监控 - procd 启动脚本 (多模式支持)
+
+START=90
+STOP=10
+
+USE_PROCD=1
+PROG_LISTENER="/usr/bin/netmonitor-listener"
+CONFIG_FILE="/etc/netmonitor.conf"
+PIDFILE_LISTENER="/var/run/netmonitor-listener.pid"
+SOCAT_SERVICE="/etc/init.d/netmonitor-socat"
+
+# 加载配置
+load_service_config() {
+    [ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+    ENABLED=${ENABLED:-1}
+    API_PORT=${API_PORT:-"8321"}
+}
+
+validate_progs() {
+    if [ ! -x "$PROG_LISTENER" ]; then
+        echo "Error: $PROG_LISTENER not found or not executable"
+        return 1
+    fi
+    return 0
+}
+
+start_service() {
+    load_service_config
+    [ "$ENABLED" != "1" ] && { echo "Network monitor is disabled"; return 0; }
+    validate_progs || return 1
+
+    echo "Starting network monitor service..."
+
+    # 启动事件监听器
+    procd_open_instance "netmonitor-listener"
+    procd_set_param command "$PROG_LISTENER"
+    procd_set_param pidfile "$PIDFILE_LISTENER"
+    procd_set_param respawn
+    procd_set_param stdout 1
+    procd_set_param stderr 1
+    procd_close_instance
+
+    # 检查 socat 命令并启动 HTTP API 服务
+    if command -v socat >/dev/null 2>&1; then
+        # 使用 socat 监听所有网络接口（0.0.0.0）
+        procd_open_instance "netmonitor-socat"
+        procd_set_param command /usr/bin/socat
+        procd_append_param command -T30
+        procd_append_param command tcp4-listen:$API_PORT,reuseaddr,fork,bind=0.0.0.0
+        procd_append_param command exec:/usr/bin/netmonitor-api-inetd
+        procd_set_param respawn
+        procd_set_param stdout 1
+        procd_set_param stderr 1
+        procd_close_instance
+        echo "  HTTP API: socat mode on port $API_PORT (all interfaces)"
+    # 检查 xinetd 配置
+    elif [ -f /etc/xinetd.d/netmonitor ]; then
+        [ -f /etc/init.d/xinetd ] && /etc/init.d/xinetd restart 2>/dev/null || true
+        echo "  HTTP API: xinetd mode on port $API_PORT"
+    else
+        echo "  HTTP API: not configured (install xinetd or socat)"
+    fi
+
+    echo "  Event listener: running"
+    echo "Network monitor service started"
+}
+
+stop_service() {
+    echo "Stopping network monitor service..."
+    rm -f "$PIDFILE_LISTENER"
+    echo "Network monitor service stopped"
+}
+
+restart() {
+    stop
+    start
+}
+
+status() {
+    load_service_config
+
+    echo "=== Network Monitor Status ==="
+    echo ""
+
+    # 事件监听器状态
+    pgrep -f "netmonitor-listener" >/dev/null 2>&1 && \
+        echo "✓ Event listener: running" || echo "✗ Event listener: not running"
+
+    # HTTP API 状态
+    if command -v socat >/dev/null 2>&1; then
+        netstat -tln 2>/dev/null | grep -q ":$API_PORT" && \
+            echo "✓ HTTP API (socat): running on port $API_PORT" || \
+            echo "✗ HTTP API (socat): not running"
+    elif [ -f /etc/xinetd.d/netmonitor ]; then
+        [ -f /etc/init.d/xinetd ] && /etc/init.d/xinetd status 2>/dev/null || \
+            (netstat -tln 2>/dev/null | grep -q ":$API_PORT" && \
+                echo "✓ HTTP API (xinetd): running on port $API_PORT" || \
+                echo "✗ HTTP API (xinetd): not running")
+    else
+        echo "- HTTP API: not configured"
+    fi
+
+    echo ""
+    echo "Configuration:"
+    echo "  Config file: $CONFIG_FILE"
+    echo "  API Port: $API_PORT"
+    echo "  WAN Interface: $WAN_IFACE"
+}
+
+case "$1" in
+    "enable")
+        ENABLE=1
+        ;;
+    "disable")
+        ENABLE=0
+        ;;
+esac

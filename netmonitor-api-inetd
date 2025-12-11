@@ -1,0 +1,120 @@
+#!/bin/sh
+# OpenWrt NetMonitor - Inetd HTTP API 服务
+# 版本: ARM优化版, 极致轻量
+
+CONFIG_FILE="/etc/netmonitor.conf"
+QUEUE_FILE="/tmp/net_events.json"
+
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+PING_TARGETS=${PING_TARGETS:-"223.5.5.5 8.8.8.8"}
+
+# JSON转义
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
+}
+
+# Ping测试（单次快速）
+ping_once() {
+    local target="$1"
+    local result=$(ping -c 1 -W 1 "$target" 2>/dev/null | grep "time=")
+    if [ -n "$result" ]; then
+        local rtt=$(echo "$result" | sed 's/.*time=\([0-9.]*\).*/\1/')
+        printf '{"rtt":%s,"loss":0}' "$rtt"
+    else
+        printf '{"rtt":null,"loss":100}'
+    fi
+}
+
+# 获取WAN错误
+get_wan_errors() {
+    local iface="$WAN_IFACE"
+    [ -n "$PPPOE_IFACE" ] && ifconfig "$PPPOE_IFACE" >/dev/null 2>&1 && iface="$PPPOE_IFACE"
+    local stats=$(ifconfig "$iface" 2>/dev/null)
+    local rx_errors=0 tx_errors=0 rx_dropped=0 tx_dropped=0
+    if echo "$stats" | grep -q "RX packets"; then
+        rx_errors=$(echo "$stats" | grep "RX packets" | sed 's/.*errors:\([0-9]*\).*/\1/' | head -1)
+        rx_dropped=$(echo "$stats" | grep "RX packets" | sed 's/.*dropped:\([0-9]*\).*/\1/' | head -1)
+    fi
+    if echo "$stats" | grep -q "TX packets"; then
+        tx_errors=$(echo "$stats" | grep "TX packets" | sed 's/.*errors:\([0-9]*\).*/\1/' | head -1)
+        tx_dropped=$(echo "$stats" | grep "TX packets" | sed 's/.*dropped:\([0-9]*\).*/\1/' | head -1)
+    fi
+    printf '{"rx_errors":%s,"tx_errors":%s,"rx_dropped":%s,"tx_dropped":%s}' \
+        "${rx_errors:-0}" "${tx_errors:-0}" "${rx_dropped:-0}" "${tx_dropped:-0}"
+}
+
+# 获取光功率
+get_optical_power() {
+    local rx_power="null" tx_power="null"
+    if [ -f "/proc/GPON" ]; then
+        local gpon_info=$(cat /proc/GPON 2>/dev/null)
+        rx_power=$(echo "$gpon_info" | grep "RECEIVED_POWER" | sed 's/.*=\([0-9.-]*\).*/\1/')
+        tx_power=$(echo "$gpon_info" | grep "TRANSMIT_POWER" | sed 's/.*=\([0-9.-]*\).*/\1/')
+    fi
+    printf '{"rx":%s,"tx":%s}' "$rx_power" "$tx_power"
+}
+
+# 获取CPU温度
+get_cpu_temp() {
+    local temp="null"
+    [ -f "/sys/class/thermal/thermal_zone0/temp" ] && {
+        temp=$(cat /sys/class/thermal/thermal_zone0/temp 2>/dev/null)
+        [ -n "$temp" ] && temp=$(awk "BEGIN {printf \"%.1f\", $temp/1000}")
+    }
+    printf '%s' "$temp"
+}
+
+# 获取WAN状态
+get_wan_state() {
+    local iface="$WAN_IFACE"
+    [ -n "$PPPOE_IFACE" ] && ifconfig "$PPPOE_IFACE" >/dev/null 2>&1 && iface="$PPPOE_IFACE"
+    ifconfig "$iface" 2>/dev/null | grep -q "UP" && echo "up" || echo "down"
+}
+
+# 生成统计摘要
+generate_summary() {
+    local pppoe_count=0 wan_down_count=0
+    if [ -f "$QUEUE_FILE" ]; then
+        pppoe_count=$(grep -c '"type":"pppoe' "$QUEUE_FILE" 2>/dev/null)
+        wan_down_count=$(grep -c '"type":"wan_down"' "$QUEUE_FILE" 2>/dev/null)
+        # 确保值为数字
+        pppoe_count=${pppoe_count:-0}
+        wan_down_count=${wan_down_count:-0}
+    fi
+    printf '{"pppoe_reconnect_count_24h":%s,"wan_down_count_24h":%s}' "$pppoe_count" "$wan_down_count"
+}
+
+# 生成完整JSON响应
+generate_json() {
+    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    
+    # 构建Ping数据
+    local ping_223=$(ping_once "223.5.5.5")
+    local ping_8=$(ping_once "8.8.8.8")
+    
+    # 获取其他数据
+    local wan_errors=$(get_wan_errors)
+    local optical=$(get_optical_power)
+    local cpu_temp=$(get_cpu_temp)
+    local wan_state=$(get_wan_state)
+    local summary=$(generate_summary)
+    local events=$(cat "$QUEUE_FILE" 2>/dev/null || echo "[]")
+    
+    # 输出JSON
+    printf '{"timestamp":"%s","realtime":{"ping":{"223.5.5.5":%s,"8.8.8.8":%s},"wan_errors":%s,"optical_power":%s,"cpu_temp":%s,"wan_state":"%s"},"events":%s,"summary":%s}' \
+        "$(json_escape "$timestamp")" \
+        "$ping_223" "$ping_8" \
+        "$wan_errors" "$optical" \
+        "$cpu_temp" "$wan_state" \
+        "$events" \
+        "$summary"
+}
+
+# HTTP响应（inetd模式）
+cat << EOFHTTP
+HTTP/1.1 200 OK
+Content-Type: application/json
+Connection: close
+
+$(generate_json)
+EOFHTTP

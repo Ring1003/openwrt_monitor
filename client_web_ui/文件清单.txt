@@ -1,0 +1,357 @@
+OpenWrt NetMonitor Web UI - 客户端文件清单
+============================================
+创建于: 2025-12-08
+版本: v1.0.0
+
+目录结构:
+-----------
+client_web_ui/
+├── Dockerfile                    # Docker镜像配置
+├── docker-compose.yml            # Docker Compose部署配置
+├── requirements.txt              # Python依赖包列表
+├── app.py                        # Flask主应用
+├── models.py                     # SQLite数据模型
+├── deploy.sh                     # 一键部署脚本
+├── .env                         # 环境变量配置
+├── .env.example                 # 环境变量模板
+├── .gitignore                   # Git忽略文件列表
+├── nginx.conf                   # Nginx配置（含SSL）
+├── README.md                    # 详细文档
+└── templates/
+    └── index.html              # Web界面模板
+└── data/                        # 数据目录（SQLite数据库）
+└── logs/                        # 日志目录
+
+文件清单
+========
+
+1. 核心文件
+-----------
+1) app.py (11.5 KB)
+   - Flask主应用
+   - API接口实现
+   - 数据抓取逻辑
+   - 定时任务管理(APScheduler)
+   - 路由：
+     * GET /                    - 主页
+     * GET /api/status          - 实时状态
+     * GET /api/history         - 历史数据
+     * GET /api/ping_history    - Ping历史
+     * GET /api/events          - 事件列表
+     * GET /api/stats/summary   - 统计摘要
+     * GET /api/fetch_now       - 立即抓取
+     * GET /health              - 健康检查
+
+2) models.py (5.8 KB)
+   - SQLite数据模型
+   - 数据库表定义：
+     * network_status - 网络状态表
+     * ping_results   - Ping测试结果表
+     * network_events - 网络事件表
+     * hourly_stats   - 每小时统计数据表
+   - 使用Flask-SQLAlchemy
+
+3) requirements.txt (131 bytes)
+   - Flask==3.0.0
+   - Flask-SQLAlchemy==3.1.1
+   - Flask-CORS==4.0.0
+   - requests==2.31.0
+   - python-dotenv==1.0.0
+   - schedule==1.2.0
+   - apscheduler==3.10.4
+
+2. Docker配置
+--------------
+4) Dockerfile (793 bytes)
+   - 基础镜像: python:3.11-slim
+   - 安装系统依赖: sqlite3, curl
+   - 工作目录: /app
+   - 暴露端口: 5000
+   - 健康检查
+
+5) docker-compose.yml (1.3 KB)
+   - 服务定义: netmonitor-web
+   - 端口映射: 5000:5000
+   - 卷挂载: data, logs
+   - 环境变量配置
+   - 可选: Nginx反向代理(profile)
+
+6) nginx.conf (2.1 KB)
+   - Nginx配置模板
+   - HTTP重定向到HTTPS
+   - SSL配置
+   - 安全头部设置
+   - Gzip压缩
+   - WebSocket支持
+
+3. 配置文件
+------------
+7) .env (201 bytes)
+   - 路由器配置(ROUTER_IP, PORT, TOKEN)
+   - 数据抓取间隔(POLL_INTERVAL)
+   - Flask配置(HOST, PORT, DEBUG)
+
+8) .env.example (238 bytes)
+   - 环境变量模板
+   - 包含所有可配置项说明
+
+9) .gitignore (384 bytes)
+   - Python缓存文件
+   - SQLite数据库(*.db, *.sqlite)
+   - 日志文件(*.log)
+   - 环境变量(.env)
+   - IDE文件(.vscode, .idea)
+   - SSL证书(ssl/)
+
+4. Web界面
+-----------
+10) templates/index.html (14.2 KB)
+    - Bootstrap 5.3响应式布局
+    - Chart.js图表库
+    - 功能模块:
+      * 状态概览卡片(WAN状态、CPU温度、延迟、可用性)
+      * Ping延迟趋势图(1/6/24小时切换)
+      * 光功率显示(RX/TX)
+      * 接口错误统计
+      * 实时事件列表(自动刷新)
+      * Ping详情面板
+
+5. 部署脚本
+------------
+11) deploy.sh (3.8 KB)
+    - 一键部署脚本
+    - 功能:检查Docker、配置路由、构建镜像、启动服务
+    - 使用: ./deploy.sh
+    - 参数:
+      * config - 配置路由器
+      * build - 构建镜像
+      * start - 启动服务
+      * stop - 停止服务
+      * restart - 重启服务
+      * logs - 查看日志
+
+6. 文档
+--------
+12) README.md (7.2 KB)
+    - 详细文档
+    - 包含:
+      * 功能特性
+      * 系统架构图
+      * 三种部署方式
+      * API接口文档
+      * 数据结构说明
+      * Web界面介绍
+      * 定时任务
+      * 性能优化
+      * 故障排查
+
+技术栈
+======
+
+后端:
+  - Flask 3.0.0 (Web框架)
+  - Flask-SQLAlchemy 3.1.1 (ORM)
+  - Flask-CORS 4.0.0 (跨域支持)
+  - requests 2.31.0 (HTTP客户端)
+  - APScheduler 3.10.4 (定时任务)
+
+数据库:
+  - SQLite 3 (文件型数据库)
+  - Flask-SQLAlchemy ORM
+
+前端:
+  - HTML5 + CSS3
+  - Bootstrap 5.3
+  - Chart.js 4.4.0 (图表)
+  - Bootstrap Icons (图标)
+
+容器化:
+  - Docker
+  - Docker Compose
+
+系统架构
+========
+
+┌─────────────────┐      ┌──────────────────┐      ┌─────────────────┐
+│ OpenWrt Router  │      │  NetMonitor Web  │      │   Web Browser   │
+│                 │      │      UI          │      │                 │
+│ netmonitor-api  │─────▶│  Flask + SQLite  │─────▶│   Dashboard     │
+│ Port: 8321      │  API │  Port: 5000      │ HTTP │                 │
+└─────────────────┘      └──────────────────┘      └─────────────────┘
+                               │
+                               ▼
+                       ┌──────────────────┐
+                       │   SQLite DB      │
+                       │  netmonitor.db   │
+                       └──────────────────┘
+
+数据流:
+-------
+1. APScheduler定时触发(默认60秒)
+2. Flask调用fetch_router_data()
+3. 发送HTTP请求到OpenWrt API
+4. 获取JSON数据
+5. 解析并保存到SQLite数据库
+6. Web界面通过API查询数据库
+7. Chart.js渲染图表
+
+定时任务
+========
+
+1. 数据抓取 (data_fetch)
+   - 间隔: POLL_INTERVAL秒 (默认60)
+   - 功能: 从OpenWrt获取数据并保存
+
+2. 每小时统计 (hourly_stats)
+   - 时间: 每小时整点
+   - 功能: 生成该小时的统计数据
+
+3. 数据清理 (cleanup)
+   - 时间: 每天凌晨3点
+   - 功能: 删除30天前的旧数据
+
+API接口
+=======
+
+RESTful API:
+------------
+
+GET /                    - 主页
+GET /health              - 健康检查
+GET /api/status          - 实时状态
+GET /api/history         - 历史数据
+GET /api/ping_history    - Ping历史
+GET /api/events          - 事件列表
+GET /api/stats/summary   - 统计摘要
+GET /api/fetch_now       - 立即抓取
+
+性能优化
+========
+
+1. 数据库索引
+   - timestamp字段索引
+   - event_type字段索引
+
+2. 数据分页
+   - 历史数据分页加载
+
+3. 预计算
+   - 每小时统计数据缓存
+
+4. 数据清理
+   - 自动删除30天前数据
+
+资源占用
+========
+
+内存: ~100-200MB (含SQLite缓存)
+CPU: < 1% (定时任务触发时)
+存储: ~10-50MB/月 (取决于数据量)
+网络: 每60秒一次API请求
+
+监控指标
+========
+
+支持监控:
+  - WAN接口状态 (up/down/connecting)
+  - CPU温度 (°C)
+  - Ping延迟 (RTT, ms)
+  - 丢包率 (%)
+  - 光功率 (RX/TX dBm)
+  - 接口错误 (RX/TX errors/dropped)
+  - PPPoE重连次数
+  - WAN断线次数
+  - Kernel事件 (link/carrier)
+
+部署方式
+========
+
+1. Docker部署 (推荐)
+   docker-compose up -d
+
+2. Docker手动
+   docker build -t netmonitor-web .
+   docker run -d -p 5000:5000 ...
+
+3. Python直接运行
+   pip install -r requirements.txt
+   python app.py
+
+访问方式
+========
+
+Web UI:  http://localhost:5000
+API地址: http://localhost:5000/api/status
+Health:  http://localhost:5000/health
+
+配置文件
+========
+
+.env文件:
+------------
+ROUTER_IP=192.168.1.1          # OpenWrt路由器IP
+ROUTER_PORT=8321              # API端口
+ROUTER_TOKEN=                 # 访问令牌(可选)
+POLL_INTERVAL=60              # 抓取间隔(秒)
+SQLITE_DB=./data/netmonitor.db # 数据库路径
+FLASK_HOST=0.0.0.0            # 监听地址
+FLASK_PORT=5000               # 监听端口
+FLASK_DEBUG=false             # 调试模式
+
+docker-compose.yml:
+--------------------
+services:
+  netmonitor-web:
+    image: netmonitor-web
+    ports:
+      - "5000:5000"
+    environment:
+      - ROUTER_IP=192.168.1.1
+      - ROUTER_PORT=8321
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+
+环境要求
+========
+
+- Docker 20.10+
+  或
+- Python 3.11+
+- SQLite 3
+
+支持的OpenWrt版本:
+  - OpenWrt 21.02+
+  - iStoreOS
+
+文件大小
+========
+
+总计: ~40 KB (源码)
+Docker镜像: ~200 MB
+运行内存: ~100-200 MB
+
+更新日志
+========
+
+v1.0.0 (2025-12-08)
+- 初始版本
+- 支持Flask + SQLite
+- Docker容器化
+- 响应式Web界面
+- 定时数据抓取
+- 历史数据图表
+
+许可证
+=======
+
+MIT License
+
+联系方式
+========
+
+GitHub: https://github.com/openwrt/netmonitor
+
+============================================
+文件清单生成完成
+============================================

@@ -1,0 +1,48 @@
+version: '3.8'
+
+services:
+  netmonitor-web:
+    build: .
+    container_name: netmonitor-web
+    restart: unless-stopped
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+      - ./logs:/app/logs
+    environment:
+      - ROUTER_IP=${ROUTER_IP:-192.168.1.1}
+      - ROUTER_PORT=${ROUTER_PORT:-8321}
+      - ROUTER_TOKEN=${ROUTER_TOKEN:-}
+      - POLL_INTERVAL=${POLL_INTERVAL:-60}
+      - SQLITE_DB=/app/data/netmonitor.db
+      - FLASK_ENV=production
+    networks:
+      - netmonitor
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # 可选：Nginx反向代理
+  nginx:
+    image: nginx:alpine
+    container_name: netmonitor-nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./ssl:/etc/nginx/ssl:ro
+    depends_on:
+      - netmonitor-web
+    networks:
+      - netmonitor
+    profiles:
+      - with-nginx
+
+networks:
+  netmonitor:
+    driver: bridge

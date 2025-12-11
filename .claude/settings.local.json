@@ -1,0 +1,15 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh root@iStoreOS 'command -v inetd || command -v xinetd || command -v tinyinetd || ls -la /etc/init.d/inetd /etc/init.d/xinetd 2>/dev/null || echo \"\"No inetd found\"\"')",
+      "Bash(ls:*)",
+      "WebSearch",
+      "Bash(git --version:*)",
+      "Bash(gh --version:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

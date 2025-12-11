@@ -1,0 +1,87 @@
+#!/bin/sh
+# OpenWrt ARM 轻量级网络监控 - 事件监听器
+# 使用 inetd 集成方案，更稳定高效
+
+CONFIG_FILE="/etc/netmonitor.conf"
+QUEUE_FILE="/tmp/net_events.json"
+MAX_EVENTS=200
+
+[ -f "$CONFIG_FILE" ] && . "$CONFIG_FILE"
+
+json_escape() {
+    printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g; s/\n/\\n/g'
+}
+
+get_timestamp() {
+    date '+%Y-%m-%d %H:%M:%S'
+}
+
+add_event() {
+    local ts=$(get_timestamp)
+    printf '{"time":"%s","type":"%s","message":"%s"}\n' \
+        "$(json_escape "$ts")" \
+        "$(json_escape "$1")" \
+        "$(json_escape "$2")" >> "$QUEUE_FILE.tmp"
+    
+    cat "$QUEUE_FILE" 2>/dev/null | grep -v '^\[$' | grep -v '^\]$' | head -199 > "$QUEUE_FILE.tmp2"
+    echo '[' > "$QUEUE_FILE"
+    [ -s "$QUEUE_FILE.tmp2" ] && cat "$QUEUE_FILE.tmp2" >> "$QUEUE_FILE" && echo ',' >> "$QUEUE_FILE"
+    cat "$QUEUE_FILE.tmp" >> "$QUEUE_FILE"
+    echo ']' >> "$QUEUE_FILE"
+    rm -f "$QUEUE_FILE.tmp" "$QUEUE_FILE.tmp2"
+    chmod 644 "$QUEUE_FILE"
+}
+
+monitor_pppoe() {
+    logread -f 2>/dev/null | while IFS= read -r line; do
+        case "$line" in
+            *pppd*|*pppoe*)
+                case "$line" in
+                    *synchroniz*|*estab*) add_event "pppoe_up" "PPP连接建立" ;;
+                    *LCP*terminated*) add_event "pppoe_lcp_term" "LCP终止" ;;
+                    *PADT*) add_event "pppoe_padt" "收到PADT" ;;
+                    *auth*fail*|*CHAP*fail*|*PAP*fail*) add_event "pppoe_auth_fail" "认证失败" ;;
+                    *pppd*exit*) add_event "pppoe_down" "PPPoE断开" ;;
+                esac ;;
+        esac
+    done
+}
+
+monitor_wan_interface() {
+    ubus -A -S monitor "network.interface.*" 2>/dev/null | while IFS= read -r msg; do
+        if echo "$msg" | grep -q "\"interface\".*\"$WAN_IFACE\""; then
+            case "$msg" in
+                *'\"up\":true'*) add_event "wan_up" "WAN接口UP" ;;
+                *'\"up\":false'*) add_event "wan_down" "WAN接口DOWN" ;;
+            esac
+        fi
+    done &
+}
+
+dmesg_monitor() {
+    dmesg -w 2>/dev/null | while IFS= read -r line; do
+        case "$line" in
+            *carrier*lost*) add_event "kernel_carrier_lost" "载波丢失" ;;
+            *"$WAN_IFACE"*"Link is Down"*) add_event "kernel_link_down" "链路DOWN" ;;
+            *"$WAN_IFACE"*"Link is Up"*) add_event "kernel_link_up" "链路UP" ;;
+        esac
+    done
+}
+
+init_queue() {
+    [ -f "$QUEUE_FILE" ] || echo '[
+]' > "$QUEUE_FILE"
+}
+
+cleanup() {
+    exit 0
+}
+
+init_queue
+trap cleanup TERM INT
+
+monitor_pppoe &
+monitor_wan_interface
+dmesg_monitor &
+
+wait

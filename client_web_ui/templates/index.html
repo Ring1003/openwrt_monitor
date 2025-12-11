@@ -1,0 +1,1027 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-bs-theme="light">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OpenWrt 网络监控 | NetMonitor</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.0/font/bootstrap-icons.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.js"></script>
+    <style>
+        /* 现代CSS变量系统 */
+        :root {
+            --primary-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --success-gradient: linear-gradient(135deg, #84fab0 0%, #8fd3f4 100%);
+            --danger-gradient: linear-gradient(135deg, #fa709a 0%, #fee140 100%);
+            --warning-gradient: linear-gradient(135deg, #f6d365 0%, #fda085 100%);
+            --info-gradient: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+            --card-shadow: 0 8px 30px rgba(0,0,0,0.12);
+            --card-hover-shadow: 0 12px 40px rgba(0,0,0,0.16);
+            --transition-speed: 0.3s;
+        }
+
+        /* 全局样式优化 */
+        body {
+            background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            min-height: 100vh;
+            transition: background-color var(--transition-speed);
+        }
+
+        html[data-bs-theme="dark"] body {
+            background: linear-gradient(135deg, #232526 0%, #414345 100%);
+        }
+
+        /* 导航栏优化 */
+        .navbar {
+            background: rgba(255,255,255,0.9) !important;
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+        }
+
+        html[data-bs-theme="dark"] .navbar {
+            background: rgba(30,30,30,0.9) !important;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        /* 卡片现代化设计 */
+        .card {
+            border: none;
+            border-radius: 16px;
+            box-shadow: var(--card-shadow);
+            margin-bottom: 24px;
+            background: rgba(255,255,255,0.95);
+            transition: all var(--transition-speed) cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .card:hover {
+            transform: translateY(-4px);
+            box-shadow: var(--card-hover-shadow);
+        }
+
+        html[data-bs-theme="dark"] .card {
+            background: rgba(50,50,60,0.95);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .card-header {
+            background: transparent;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            font-weight: 600;
+            padding: 16px 20px;
+            font-size: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        /* 指标卡片特殊样式 */
+        .metric-card {
+            position: relative;
+            overflow: hidden;
+        }
+
+        .metric-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px;
+            background: var(--primary-gradient);
+        }
+
+        .metric-value {
+            font-size: 2.5rem;
+            font-weight: 700;
+            margin: 0;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            line-height: 1;
+        }
+
+        .metric-label {
+            color: #6c757d;
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+
+        /* 状态指示器增强 */
+        .status-indicator {
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 10px;
+            position: relative;
+        }
+
+        .status-up {
+            background: var(--success-gradient);
+            animation: pulse-green 2s infinite;
+        }
+
+        .status-down {
+            background: var(--danger-gradient);
+            animation: pulse-red 2s infinite;
+        }
+
+        .status-connecting {
+            background: var(--warning-gradient);
+            animation: pulse-yellow 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(40, 167, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(40, 167, 69, 0); }
+        }
+
+        @keyframes pulse-red {
+            0% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(220, 53, 69, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(220, 53, 69, 0); }
+        }
+
+        @keyframes pulse-yellow {
+            0% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0.7); }
+            70% { box-shadow: 0 0 0 10px rgba(255, 193, 7, 0); }
+            100% { box-shadow: 0 0 0 0 rgba(255, 193, 7, 0); }
+        }
+
+        /* 图表容器优化 */
+        .chart-container {
+            position: relative;
+            height: 350px;
+            padding: 16px;
+        }
+
+        /* 事件列表样式 */
+        .event-item {
+            padding: 16px;
+            border-bottom: 1px solid rgba(0,0,0,0.05);
+            transition: background-color var(--transition-speed);
+            border-radius: 8px;
+            margin-bottom: 8px;
+        }
+
+        .event-item:hover {
+            background-color: rgba(0,0,0,0.02);
+        }
+
+        .event-time {
+            font-size: 0.75rem;
+            color: #6c757d;
+            font-family: monospace;
+        }
+
+        .event-type {
+            font-weight: 700;
+            font-size: 0.875rem;
+            margin-bottom: 4px;
+        }
+
+        .event-type.pppoe { color: #007bff; }
+        .event-type.wan { color: #28a745; }
+        .event-type.error { color: #dc3545; }
+
+        /* 加载动画 */
+        .loading {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 200px;
+        }
+
+        /* Toast通知样式 */
+        .toast-container {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            z-index: 1060;
+        }
+
+        .toast {
+            border: none;
+            border-radius: 12px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+            backdrop-filter: blur(10px);
+        }
+
+        /* 暗色模式切换按钮 */
+        .theme-toggle {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            width: 56px;
+            height: 56px;
+            border-radius: 50%;
+            background: var(--primary-gradient);
+            border: none;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+            color: white;
+            font-size: 1.5rem;
+            cursor: pointer;
+            transition: all var(--transition-speed);
+            z-index: 1050;
+        }
+
+        .theme-toggle:hover {
+            transform: scale(1.1);
+            box-shadow: 0 6px 16px rgba(0,0,0,0.25);
+        }
+
+        /* 响应式优化 */
+        @media (max-width: 768px) {
+            .container-fluid {
+                padding-left: 12px;
+                padding-right: 12px;
+            }
+
+            .metric-value {
+                font-size: 2rem;
+            }
+
+            .chart-container {
+                height: 250px;
+            }
+
+            .navbar-brand {
+                font-size: 1.1rem;
+            }
+
+            .btn-group .btn {
+                padding: 4px 8px;
+                font-size: 0.875rem;
+            }
+        }
+
+        /* 性能指示器 */
+        .performance-indicator {
+            display: inline-block;
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+        }
+
+        .performance-excellent { background: var(--success-gradient); color: #155724; }
+        .performance-good { background: var(--info-gradient); color: #0c5460; }
+        .performance-fair { background: var(--warning-gradient); color: #856404; }
+        .performance-poor { background: var(--danger-gradient); color: #721c24; }
+
+        /* 统计卡片图标 */
+        .metric-icon {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            font-size: 2rem;
+            opacity: 0.2;
+            color: #667eea;
+        }
+
+        /* 数据表格样式 */
+        .data-table {
+            font-size: 0.875rem;
+        }
+
+        .data-table th {
+            background-color: rgba(0,0,0,0.02);
+            border-bottom: 2px solid rgba(0,0,0,0.05);
+        }
+
+        html[data-bs-theme="dark"] .data-table th {
+            background-color: rgba(255,255,255,0.02);
+            border-bottom-color: rgba(255,255,255,0.05);
+        }
+    </style>
+</head>
+<body>
+    <nav class="navbar navbar-expand-lg navbar-light">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="bi bi-router-fill me-2"></i>
+                OpenWrt 网络监控
+            </a>
+            <div class="navbar-text d-flex align-items-center gap-2">
+                <span class="badge bg-success" id="connectionStatus">已连接</span>
+                <span class="last-update">最后更新: <span id="lastUpdate">--:--:--</span></span>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container-fluid">
+        <!-- 状态概览 -->
+        <div class="row">
+            <div class="col-xl-3 col-md-6 mb-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-wifi metric-icon"></i>
+                        <div class="metric-label">WAN状态</div>
+                        <div class="metric-value">
+                            <span id="wanStatusIcon" class="status-indicator status-up"></span>
+                            <span id="wanStatus">检测中...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-thermometer-high metric-icon"></i>
+                        <div class="metric-label">CPU温度</div>
+                        <div class="metric-value" id="cpuTemp">--<small class="fw-normal">°C</small></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-speedometer2 metric-icon"></i>
+                        <div class="metric-label">平均延迟</div>
+                        <div class="metric-value" id="avgPing">--<small class="fw-normal">ms</small></div>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-3">
+                <div class="card metric-card">
+                    <div class="card-body text-center">
+                        <i class="bi bi-shield-check metric-icon"></i>
+                        <div class="metric-label">24小时可用性</div>
+                        <div class="metric-value" id="uptime">--<small class="fw-normal">%</small></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ping延迟图表 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-graph-up me-2"></i>Ping延迟趋势
+                        <div class="ms-auto d-inline-flex gap-2">
+                            <div class="btn-group btn-group-sm" role="group">
+                                <button type="button" class="btn btn-outline-primary" onclick="changePingRange(1)">1小时</button>
+                                <button type="button" class="btn btn-outline-primary active" onclick="changePingRange(6)">6小时</button>
+                                <button type="button" class="btn btn-outline-primary" onclick="changePingRange(24)">24小时</button>
+                            </div>
+                            <button class="btn btn-outline-success btn-sm" onclick="fetchNow()" title="立即刷新">
+                                <i class="bi bi-lightning-charge"></i>
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="chart-container">
+                            <canvas id="pingChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <!-- 网络统计 -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-activity me-2"></i>网络统计
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-3 col-6 text-center mb-3">
+                                <div class="metric-label">光功率 (RX)</div>
+                                <div class="metric-value" style="font-size: 1.5rem;" id="opticalRx">--<small class="fw-normal"> dBm</small></div>
+                            </div>
+                            <div class="col-md-3 col-6 text-center mb-3">
+                                <div class="metric-label">光功率 (TX)</div>
+                                <div class="metric-value" style="font-size: 1.5rem;" id="opticalTx">--<small class="fw-normal"> dBm</small></div>
+                            </div>
+                            <div class="col-md-3 col-6 text-center mb-3">
+                                <div class="metric-label">PPPoE重连</div>
+                                <div class="metric-value" style="font-size: 1.5rem;" id="pppoeReconnects">
+                                    <span class="badge bg-info">--</span>
+                                </div>
+                            </div>
+                            <div class="col-md-3 col-6 text-center mb-3">
+                                <div class="metric-label">WAN断线</div>
+                                <div class="metric-value" style="font-size: 1.5rem;" id="wanDowns">
+                                    <span class="badge bg-warning">--</span>
+                                </div>
+                            </div>
+                        </div>
+                        <hr>
+                        <div class="row">
+                            <div class="col-3 text-center">
+                                <div class="text-muted small">RX错误</div>
+                                <div class="fw-bold text-danger" id="rxErrors">--</div>
+                            </div>
+                            <div class="col-3 text-center">
+                                <div class="text-muted small">TX错误</div>
+                                <div class="fw-bold text-danger" id="txErrors">--</div>
+                            </div>
+                            <div class="col-3 text-center">
+                                <div class="text-muted small">RX丢弃</div>
+                                <div class="fw-bold text-warning" id="rxDropped">--</div>
+                            </div>
+                            <div class="col-3 text-center">
+                                <div class="text-muted small">TX丢弃</div>
+                                <div class="fw-bold text-warning" id="txDropped">--</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Ping详情 -->
+            <div class="col-lg-6">
+                <div class="card">
+                    <div class="card-header">
+                        <i class="bi bi-reception-4 me-2"></i>Ping详情
+                    </div>
+                    <div class="card-body" style="min-height: 250px;">
+                        <div id="pingDetails">
+                            <div class="loading">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 事件列表 -->
+        <div class="row">
+            <div class="col-12">
+                <div class="card">
+                    <div class="card-header d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-list-task me-2"></i>网络事件</span>
+                        <div class="d-flex gap-2">
+                            <span class="badge bg-light text-dark" id="eventCount">-- 条记录</span>
+                            <button class="btn btn-outline-primary btn-sm" onclick="refreshEvents()">
+                                <i class="bi bi-arrow-clockwise"></i> 刷新
+                            </button>
+                        </div>
+                    </div>
+                    <div class="card-body p-0">
+                        <div id="eventsList" style="max-height: 400px; overflow-y: auto;">
+                            <div class="loading">
+                                <div class="spinner-border" role="status">
+                                    <span class="visually-hidden">加载中...</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 页脚 -->
+        <footer class="text-center mt-5 mb-4">
+            <p class="text-muted small">
+                <i class="bi bi-cpu"></i> OpenWrt Network Monitor | Powered by Flask + Chart.js
+            </p>
+        </footer>
+    </div>
+
+    <!-- Toast通知容器 -->
+    <div class="toast-container"></div>
+
+    <!-- 主题切换按钮 -->
+    <button class="theme-toggle" onclick="toggleTheme()" title="切换主题">
+        <i class="bi bi-moon-fill" id="themeIcon"></i>
+    </button>
+
+    <!-- 脚本区域 -->
+    <script>
+        let pingChart = null;
+        let currentPingRange = 6;
+        let lastWanState = null;
+        let notificationQueue = [];
+
+        // 初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 加载主题
+            const savedTheme = localStorage.getItem('theme') || 'light';
+            document.documentElement.setAttribute('data-bs-theme', savedTheme);
+            updateThemeIcon();
+
+            // 初始化数据
+            fetchData();
+            fetchHistory();
+            fetchEvents();
+            fetchSummary();
+
+            // 定时刷新
+            setInterval(fetchData, 30000); // 30秒刷新
+            setInterval(fetchEvents, 60000); // 60秒刷新
+            setInterval(fetchSummary, 60000); // 60秒刷新
+        });
+
+        // 主题切换
+        function toggleTheme() {
+            const currentTheme = document.documentElement.getAttribute('data-bs-theme');
+            const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            document.documentElement.setAttribute('data-bs-theme', newTheme);
+            localStorage.setItem('theme', newTheme);
+            updateThemeIcon();
+        }
+
+        function updateThemeIcon() {
+            const isDark = document.documentElement.getAttribute('data-bs-theme') === 'dark';
+            document.getElementById('themeIcon').className = isDark ? 'bi bi-sun-fill' : 'bi bi-moon-fill';
+        }
+
+        // 显示Toast通知
+        function showToast(title, message, type = 'info') {
+            const toastId = Date.now();
+            const toastHtml = `
+                <div class="toast align-items-center text-white bg-${type} border-0" style="backdrop-filter: blur(10px);" id="toast-${toastId}" role="alert">
+                    <div class="d-flex">
+                        <div class="toast-body">
+                            <strong>${title}</strong><br>
+                            ${message}
+                        </div>
+                        <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
+                    </div>
+                </div>
+            `;
+
+            const container = document.querySelector('.toast-container');
+            container.insertAdjacentHTML('beforeend', toastHtml);
+
+            const toast = new bootstrap.Toast(document.getElementById(`toast-${toastId}`));
+            toast.show();
+
+            toast._element.addEventListener('hidden.bs.toast', () => {
+                toast._element.remove();
+            });
+        }
+
+        // 获取数据
+        function fetchData() {
+            fetch('/api/status')
+                .then(response => response.json())
+                .then(data => {
+                    updateDashboard(data);
+                    updateLastUpdate();
+                })
+                .catch(error => {
+                    console.error('Failed to fetch data:', error);
+                    showToast('连接错误', '无法连接到监控服务器', 'danger');
+                });
+        }
+
+        // 立即获取数据
+        function fetchNow() {
+            fetch('/api/fetch_now')
+                .then(response => response.json())
+                .then(result => {
+                    if (result.status === 'success') {
+                        showToast('成功', '数据已刷新', 'success');
+                        fetchData();
+                        fetchSummary();
+                    } else {
+                        showToast('错误', result.message || '刷新失败', 'danger');
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch now:', error);
+                    showToast('错误', '立即刷新失败', 'danger');
+                });
+        }
+
+        // 更新仪表板
+        function updateDashboard(data) {
+            if (!data || !data.realtime) return;
+
+            const realtime = data.realtime;
+
+            // WAN状态变化检测
+            if (lastWanState !== realtime.wan_state) {
+                if (lastWanState !== null) { // 避免首次加载时通知
+                    showToast(
+                        'WAN状态变化',
+                        `WAN状态从 <strong>${lastWanState}</strong> 变更为 <strong>${realtime.wan_state}</strong>`,
+                        realtime.wan_state === 'up' ? 'success' : 'warning'
+                    );
+                }
+                lastWanState = realtime.wan_state;
+            }
+
+            // WAN状态
+            updateWanStatus(realtime.wan_state);
+
+            // CPU温度
+            updateCpuTemp(realtime.cpu_temp);
+
+            // 光功率
+            updateOpticalPower(realtime.optical_power);
+
+            // 接口错误
+            updateErrors(realtime.wan_errors);
+
+            // 更新Ping详情
+            updatePingDetails(data);
+        }
+
+        function updateWanStatus(state) {
+            const statusEl = document.getElementById('wanStatus');
+            const iconEl = document.getElementById('wanStatusIcon');
+
+            switch(state) {
+                case 'up':
+                    statusEl.textContent = '在线';
+                    iconEl.className = 'status-indicator status-up';
+                    break;
+                case 'down':
+                    statusEl.textContent = '离线';
+                    iconEl.className = 'status-indicator status-down';
+                    break;
+                case 'connecting':
+                    statusEl.textContent = '连接中';
+                    iconEl.className = 'status-indicator status-connecting';
+                    break;
+                default:
+                    statusEl.textContent = '未知';
+                    iconEl.className = 'status-indicator';
+            }
+        }
+
+        function updateCpuTemp(temp) {
+            const el = document.getElementById('cpuTemp');
+            if (temp !== null && temp !== undefined) {
+                let colorClass = 'text-success';
+                if (temp > 75) colorClass = 'text-danger';
+                else if (temp > 65) colorClass = 'text-warning';
+
+                el.innerHTML = `<span class="${colorClass}">${temp}</span><small class="fw-normal">°C</small>`;
+            } else {
+                el.innerHTML = '<span class="text-muted">--</span><small class="fw-normal">°C</small>';
+            }
+        }
+
+        function updateOpticalPower(optical) {
+            const rxEl = document.getElementById('opticalRx');
+            const txEl = document.getElementById('opticalTx');
+
+            const updateValue = (el, value) => {
+                if (value !== null && value !== undefined) {
+                    el.innerHTML = `${value}<small class="fw-normal"> dBm</small>`;
+                } else {
+                    el.innerHTML = '<span class="text-muted">--</span><small class="fw-normal"> dBm</small>';
+                }
+            };
+
+            updateValue(rxEl, optical?.rx);
+            updateValue(txEl, optical?.tx);
+        }
+
+        function updateErrors(errors) {
+            const rxErr = errors?.rx_errors || 0;
+            const txErr = errors?.tx_errors || 0;
+            const rxDrop = errors?.rx_dropped || 0;
+            const txDrop = errors?.tx_dropped || 0;
+
+            const updateBadge = (el, value, danger = 0, warning = 100) => {
+                let style = 'opacity-75';
+                if (value > danger) style = 'text-danger';
+                else if (value > warning) style = 'text-warning';
+                el.innerHTML = `<span class="${style}">${value}</span>`;
+            };
+
+            updateBadge(document.getElementById('rxErrors'), rxErr, 10);
+            updateBadge(document.getElementById('txErrors'), txErr, 10);
+            updateBadge(document.getElementById('rxDropped'), rxDrop, 1000, 100);
+            updateBadge(document.getElementById('txDropped'), txDrop, 1000, 100);
+        }
+
+        // 历史数据
+        function fetchHistory() {
+            fetch(`/api/ping_history?hours=${currentPingRange}`)
+                .then(response => response.json())
+                .then(data => {
+                    updatePingChart(data.records);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch history:', error);
+                });
+        }
+
+        function updatePingChart(records) {
+            const ctx = document.getElementById('pingChart').getContext('2d');
+
+            if (!records || records.length === 0) {
+                return;
+            }
+
+            // 按目标分组
+            const targets = [...new Set(records.map(r => r.target))];
+            const datasets = targets.map((target, index) => {
+                const colors = [
+                    '#667eea', '#764ba2', '#f093fb', '#f5576c', '#4facfe',
+                    '#00f2fe', '#fa709a', '#fee140', '#30cfd0', '#a8edea'
+                ];
+                const targetRecords = records.filter(r => r.target === target).reverse(); // 时间顺序
+
+                return {
+                    label: target,
+                    data: targetRecords.map(r => ({
+                        x: r.timestamp,
+                        y: r.rtt
+                    })),
+                    borderColor: colors[index % colors.length],
+                    backgroundColor: colors[index % colors.length] + '20',
+                    borderWidth: 2,
+                    tension: 0.4,
+                    pointRadius: 0,
+                    pointHoverRadius: 5,
+                    pointHoverBackgroundColor: colors[index % colors.length],
+                    pointHoverBorderWidth: 2
+                };
+            });
+
+            if (pingChart) {
+                pingChart.destroy();
+            }
+
+            pingChart = new Chart(ctx, {
+                type: 'line',
+                data: { datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: {
+                        mode: 'index',
+                        intersect: false
+                    },
+                    plugins: {
+                        legend: {
+                            display: true,
+                            position: 'top',
+                            labels: {
+                                usePointStyle: true,
+                                padding: 16
+                            }
+                        },
+                        tooltip: {
+                            backgroundColor: 'rgba(0,0,0,0.8)',
+                            padding: 12,
+                            cornerRadius: 8,
+                            titleFont: {
+                                size: 14
+                            },
+                            bodyFont: {
+                                size: 13
+                            },
+                            callbacks: {
+                                title: function(context) {
+                                    return new Date(context[0].parsed.x).toLocaleString('zh-CN');
+                                },
+                                label: function(context) {
+                                    return `${context.dataset.label}: ${context.parsed.y.toFixed(1)} ms`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: {
+                            type: 'time',
+                            time: {
+                                unit: currentPingRange <= 1 ? 'minute' : (currentPingRange <= 6 ? 'hour' : 'day'),
+                                displayFormats: {
+                                    minute: 'HH:mm',
+                                    hour: 'HH:mm',
+                                    day: 'MM-dd HH:mm'
+                                }
+                            }
+                        },
+                        y: {
+                            beginAtZero: true,
+                            title: {
+                                display: true,
+                                text: 'RTT (ms)',
+                                font: {
+                                    size: 14
+                                }
+                            },
+                            grid: {
+                                color: 'rgba(0,0,0,0.05)'
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function changePingRange(hours) {
+            currentPingRange = hours;
+
+            // 更新按钮状态
+            document.querySelectorAll('.btn-group .btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+
+            // 重新加载数据
+            fetchHistory();
+        }
+
+        // 事件管理
+        function fetchEvents() {
+            fetch('/api/events?limit=25')
+                .then(response => response.json())
+                .then(data => {
+                    updateEventsList(data.records);
+                })
+                .catch(error => {
+                    console.error('Failed to fetch events:', error);
+                });
+        }
+
+        function refreshEvents() {
+            document.getElementById('eventsList').innerHTML = `
+                <div class="loading">
+                    <div class="spinner-border" role="status">
+                        <span class="visually-hidden">加载中...</span>
+                    </div>
+                </div>
+            `;
+            fetchEvents();
+        }
+
+        function updateEventsList(events) {
+            const container = document.getElementById('eventsList');
+
+            if (!events || events.length === 0) {
+                container.innerHTML = '<div class="text-center text-muted p-4">暂无事件</div>';
+                return;
+            }
+
+            // 更新事件数量
+            document.getElementById('eventCount').textContent = `${events.length} 条记录`;
+
+            container.innerHTML = events.map(event => {
+                const eventTime = new Date(event.event_time).toLocaleString('zh-CN');
+                const typeClass = getEventTypeClass(event.type);
+
+                return `
+                    <div class="event-item">
+                        <div class="d-flex justify-content-between align-items-start mb-1">
+                            <div class="event-type ${typeClass}">
+                                <i class="${getEventIcon(event.type)}"></i>
+                                <span class="ms-1">${event.type}</span>
+                            </div>
+                            <div class="event-time">${eventTime}</div>
+                        </div>
+                        ${event.message ? `<div class="event-message">${event.message}</div>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function getEventTypeClass(type) {
+            if (type?.includes('up')) return 'text-success';
+            if (type?.includes('down') || type?.includes('fail')) return 'text-danger';
+            if (type?.includes('warning')) return 'text-warning';
+            return 'text-info';
+        }
+
+        function getEventIcon(type) {
+            if (type?.includes('pppoe')) return 'bi bi-arrow-repeat';
+            if (type?.includes('wan')) return 'bi bi-wifi';
+            if (type?.includes('kernel')) return 'bi bi-bug';
+            return 'bi bi-info-circle';
+        }
+
+        // 汇总数据
+        function fetchSummary() {
+            fetch('/api/stats/summary?hours=24')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        updateSummary(data.summary);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to fetch summary:', error);
+                });
+        }
+
+        function updateSummary(summary) {
+            if (!summary) return;
+
+            const uptimeEl = document.getElementById('uptime');
+            if (summary.wan_availability !== undefined) {
+                const value = Math.round(summary.wan_availability * 100) / 100;
+                let color = 'text-success';
+                if (value < 95) color = 'text-warning';
+                if (value < 90) color = 'text-danger';
+
+                uptimeEl.innerHTML = `<span class="${color}">${value}</span><small class="fw-normal">%</small>`;
+            }
+
+            // PPPoE重连和WAN断线
+            const pppoeEl = document.getElementById('pppoeReconnects');
+            const wanEl = document.getElementById('wanDowns');
+
+            if (summary.pppoe_events !== undefined) {
+                const count = summary.pppoe_events;
+                const color = count > 5 ? 'danger' : (count > 1 ? 'warning' : 'info');
+                pppoeEl.innerHTML = `<span class="badge bg-${color} fs-6">${count}</span>`;
+            }
+
+            if (summary.wan_events !== undefined) {
+                const count = summary.wan_events;
+                const color = count > 3 ? 'danger' : (count > 0 ? 'warning' : 'success');
+                wanEl.innerHTML = `<span class="badge bg-${color} fs-6">${count}</span>`;
+            }
+
+            // 平均温度
+            if (summary.avg_cpu_temp) {
+                updateCpuTemp(summary.avg_cpu_temp);
+            }
+
+            // 丢包率
+            if (summary.packet_loss_rate !== undefined) {
+                const rate = (summary.packet_loss_rate * 100).toFixed(2);
+                if (rate > 0) {
+                    showToast('丢包警告', `24小时平均丢包率: ${rate}%`, 'warning');
+                }
+            }
+        }
+
+        function updatePingDetails(data) {
+            const container = document.getElementById('pingDetails');
+
+            if (!data.realtime || !data.realtime.ping) {
+                container.innerHTML = '<div class="text-center text-muted p-4">无Ping数据</div>';
+                return;
+            }
+
+            const pings = Object.entries(data.realtime.ping);
+            const summary = data.summary || {};
+
+            container.innerHTML = pings.map(([target, ping]) => {
+                let rttClass = 'text-success';
+                let badgeClass = 'bg-success';
+
+                if (ping.rtt === null || ping.rtt === undefined) {
+                    rttClass = 'text-muted';
+                    badgeClass = 'bg-secondary';
+                } else if (ping.rtt > 200) {
+                    rttClass = 'text-danger';
+                    badgeClass = 'bg-danger';
+                } else if (ping.rtt > 100) {
+                    rttClass = 'text-warning';
+                    badgeClass = 'bg-warning';
+                }
+
+                return `
+                    <div class="mb-3 p-2 rounded bg-light">
+                        <div class="d-flex justify-content-between align-items-center mb-2">
+                            <div><i class="bi bi-server"></i> ${target}</div>
+                            <span class="badge ${badgeClass}">${ping.loss > 0 ? ping.loss + '% loss' : 'OK'}</span>
+                        </div>
+                        <div class="d-flex justify-content-between">
+                            <span class="${rttClass} fw-bold">
+                                ${ping.rtt !== null ? ping.rtt.toFixed(1) + ' ms' : '超时'}
+                            </span>
+                            <span class="text-muted small">
+                                ${ping.loss > 0 ? '⚠️ 有丢包' : '✓ 正常'}
+                            </span>
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function updateLastUpdate() {
+            const now = new Date();
+            const timeString = now.toLocaleString('zh-CN');
+            document.getElementById('lastUpdate').textContent = timeString;
+
+            // 更新连接状态
+            document.getElementById('connectionStatus').innerHTML = '<i class="bi bi-check-circle-fill"></i> 已连接';
+            document.getElementById('connectionStatus').className = 'badge bg-success';
+        }
+
+        // 更新所有数据（手动调用）
+        function refreshAll() {
+            showToast('刷新', '正在更新所有数据...', 'info');
+            fetchData();
+            fetchSummary();
+            fetchHistory();
+            fetchEvents();
+        }
+    </script>
+</body>
+</html>
